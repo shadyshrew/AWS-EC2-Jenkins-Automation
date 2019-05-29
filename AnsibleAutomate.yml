@@ -1,0 +1,82 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: true
+  vars: 
+    deployment_name: inst5
+    security_name: you_shall_not_pass
+    key_name: snarasimha_support
+    region_name: us-east-1
+  tasks:
+    - name: Security group setup
+      ec2_group:
+        name: "{{security_name}}"
+        description: Allow traffic on ports 22 and 80
+        region: "{{region_name}}"
+        rules:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 22
+              to_port: 22
+              cidr_ip: 0.0.0.0/0
+        rules_egress:
+              - proto: all
+                cidr_ip: 0.0.0.0/0
+
+    - name: Create an EC2 instance named {{deployment_name}}
+      #Boto 3 compatible
+      ec2_instance:
+          name: "{{deployment_name}}"
+          region: "{{ region_name }}"
+          key_name: "{{key_name}}"
+          #vpc_subnet_id: subnet-0fe59510cf0f26363
+          instance_type: t2.micro
+          security_group: "{{security_name}}"
+          #security_group: default
+          network:
+            assign_public_ip: true
+          #image_id: ami-0c6b1d09930fac512
+          #RedHat Linux 8
+          image_id: ami-0756fbca465a59a30
+          tags:
+            Owner: snarasimha
+
+    - name: Gather EC2 Facts
+      ec2_instance_facts:
+        filters:
+          "tag:Name": "{{deployment_name}}"
+      register: ec2_out
+
+    - name: Show outs
+      debug: ec2_out
+      debug: msg="{{ ec2_out.instances[0].public_ip_address }}"
+      debug: msg="{{ ec2_out.instances[0].public_dns_name }}"
+      debug: msg=~/.ssh/{{key_name}}.pem
+
+    - name: Add instance to host group
+      add_host:
+        #hostname: "{{ ec2_out.instances[0].public_dns_name }}"
+        #hostname: "{{ec2_out.instances[0].public_dns_name}}"
+        hostname: ec2-54-197-135-202.compute-1.amazonaws.com
+        groupname: launched
+        ansible_ssh_private_key_file: ~/.ssh/{{key_name}}.pem
+        ansible_user: ec2-user
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+    
+    - name: Wait for SSH
+      delegate_to: "{{groups['launched'][0]}}"
+      wait_for_connection:
+        delay: 10
+        timeout: 30
+
+- hosts: "{{groups['launched'][0]}}"
+  become: yes
+  vars:
+    asdf: dd
+  tasks:
+    - name: Command
+      command: mkdir me
