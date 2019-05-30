@@ -70,6 +70,7 @@ aws_secret_access_key = <secret key>
       `chmod 400 ~/.ssh/<keypair name>.pem`
 
 # Run the code
+`cd` into the directory containing the `AnsibleAutomate.yml` playbook and run it.
 `ansible-playbook AnsibleAutomate.yml`
 
 ## Copy and paste the URL in your browser to access the Jenkins Server
