@@ -41,6 +41,7 @@
           #image_id: ami-0c6b1d09930fac512
           #RedHat Linux 8
           image_id: ami-0756fbca465a59a30
+          #image_id: ami-098bb5d92c8886ca1
           tags:
             Owner: snarasimha
 
@@ -61,6 +62,7 @@
         #hostname: "{{ ec2_out.instances[0].public_dns_name }}"
         #hostname: "{{ec2_out.instances[0].public_dns_name}}"
         hostname: ec2-54-197-135-202.compute-1.amazonaws.com
+        #hostname: ec2-34-224-221-180.compute-1.amazonaws.com
         groupname: launched
         ansible_ssh_private_key_file: ~/.ssh/{{key_name}}.pem
         ansible_user: ec2-user
@@ -76,7 +78,55 @@
 - hosts: "{{groups['launched'][0]}}"
   become: yes
   vars:
-    asdf: dd
+    #Vars for jenkins
+    version: "java-1.8.0-openjdk"
+    #alter: "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.144-0.b01.el7_4.x86_64/jre/bin/java"
+    alter: "/usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java"
+    repo_url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+    gpg_key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+    options: "-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+    #repo_url: https://pkg.jenkins-ci.org/redhat/jenkins.repo
+    #gpg_key: https://pkg.jenkins-ci.org/redhat/jenkins-ci.key
+    #options: "-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
   tasks:
-    - name: Command
-      command: mkdir me
+    - name: Install Java
+      yum:
+        name: "{{version}}"
+        state: present
+    
+    - name: defaulters
+      alternatives:
+        name: java
+        link: /bin/java
+        path: "{{alter}}"
+    
+    - name: Download the repo
+      get_url:
+        url: "{{repo_url}}"
+        dest: /etc/yum.repos.d/jenkins.repo
+      become: true
+    
+    - name: import key
+      rpm_key:
+        state: present
+        key: "{{gpg_key}}"
+      become: true
+
+    - name: install jenkins
+      yum:
+        name: jenkins
+        state: present
+      become: true
+
+    - name: java options
+      lineinfile:
+        dest=/etc/sysconfig/jenkins
+        regexp=^JENKINS_JAVA_OPTIONS=
+        line=JENKINS_JAVA_OPTIONS="{{options}}"
+      become: true
+    
+    - name: start jenkins on boot
+      service:
+        name: jenkins
+        state: started
+      become: true
