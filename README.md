@@ -72,4 +72,4 @@ aws_secret_access_key = <secret key>
 # Run the code
 `ansible-playbook AnsibleAutomate.yml`
 
-#Copy and paste the URL in your browser to access the Jenkins Server
+# Copy and paste the URL in your browser to access the Jenkins Server
