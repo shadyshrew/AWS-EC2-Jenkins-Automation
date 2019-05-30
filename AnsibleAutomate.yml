@@ -1,14 +1,37 @@
 ---
+#Tasks run on the localhost
+#############################################################################
+#1) Create a security group with port 8080 (Jenkins default port) open.
+#2) Create an EC2 instance.
+#3) Gather the instance facts to obatin it's Public DNS Name/ip.
+#4) Add the Public DNS Name to a hostgroup.
+#5) SSH into the instance.
+#############################################################################
 - hosts: localhost
   connection: local
   gather_facts: true
   vars: 
-    deployment_name: inst1
+    deployment_name: instance
     security_name: you_shall_not_pass
+    #Name for owner tag
+    me: snarasimha
     key_name: snarasimha_support
+    #Enter region
     region_name: us-east-1
-    #open_ip: 0.0.0.0/0
+    #IP to which Port 8080 will be open
+    open_ip: 0.0.0.0/0
+    inst_type: t2.micro
+    #Get ami ID from AWS, use Amazon Linux
+    ami: ami-0756fbca465a59a30
+    #This is where your Key pair is stored.
+    key_path: ~/.ssh/{{key_name}}.pem
+    #The default user used to ssh into the AWS Machine
+    default_user: ec2-user
+    #Delay and timeout for ssh
+    delay_time: 10
+    time_out: 30
   tasks:
+    #Setup Security group
     - name: Security group setup
       ec2_group:
         name: "{{security_name}}"
@@ -18,71 +41,72 @@
             - proto: tcp
               from_port: 8080
               to_port: 8080
-              cidr_ip: 0.0.0.0/0
+              cidr_ip: "{{open_ip}}"
             - proto: tcp
               from_port: 80
               to_port: 80
-              cidr_ip: 0.0.0.0/0
+              cidr_ip: "{{open_ip}}"
             - proto: tcp
               from_port: 22
               to_port: 22
-              cidr_ip: 0.0.0.0/0
+              cidr_ip: "{{open_ip}}"
         rules_egress:
               - proto: all
-                cidr_ip: 0.0.0.0/0
-
+                cidr_ip: "{{open_ip}}"
+    
+    #Create EC2 instance with Boto 3 Compatibility[Alternative, use 'ec2' module with count 1.]
     - name: Create an EC2 instance named {{deployment_name}}
-      #Boto 3 compatible
       ec2_instance:
           name: "{{deployment_name}}"
           region: "{{ region_name }}"
           key_name: "{{key_name}}"
-          instance_type: t2.micro
+          instance_type: "{{inst_type}}"
           security_group: "{{security_name}}"
           network:
             assign_public_ip: true
-          #image_id: ami-0c6b1d09930fac512
-          #RedHat Linux 8
-          image_id: ami-0756fbca465a59a30
-          #image_id: ami-098bb5d92c8886ca1
+          #Amazon Linux
+          image_id: "{{ami}}"
           tags:
-            Owner: snarasimha
+            Owner: "{{me}}"
 
     - name: Gather EC2 Facts
       ec2_instance_facts:
         filters:
           "tag:Name": "{{deployment_name}}"
       register: ec2_out
-
-    - name: Show outs
-      debug: ec2_out
-      debug: msg="{{ ec2_out.instances[0].public_ip_address }}"
-      debug: msg="{{ ec2_out.instances[0].public_dns_name }}"
-      debug: msg=~/.ssh/{{key_name}}.pem
-
+    
+    #Add the provisioned EC2 instance to a hostgroup
     - name: Add instance to host group
       add_host:
-        #hostname: "{{ ec2_out.instances[0].public_dns_name }}"
         hostname: "{{ec2_out.instances[0].public_dns_name}}"
-        #hostname: ec2-34-228-17-176.compute-1.amazonaws.com
-        groupname: launched
-        ansible_ssh_private_key_file: ~/.ssh/{{key_name}}.pem
-        ansible_user: ec2-user
+        #hostname: ec2-54-172-146-20.compute-1.amazonaws.com
+        groupname: temp_group
+        ansible_ssh_private_key_file: "{{key_path}}"
+        ansible_user: "{{default_user}}"
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
 
-    
+    #SSH into the provisioned instance.
     - name: Wait for SSH
-      delegate_to: "{{groups['launched'][0]}}"
+      delegate_to: "{{groups['temp_group'][0]}}"
       wait_for_connection:
-        delay: 10
-        timeout: 30
+        delay: "{{delay_time}}"
+        timeout: "{{time_out}}"
 
-- hosts: "{{groups['launched'][0]}}"
+#Tasks run as superuser in the provisioned EC2 instance
+#######################################################
+#1) Install Java
+#2) Change Default Java Version
+#3) Download Jenkins repo
+#4) Import GPG Key
+#5) Install Jenkins using yum
+#6) Change Jenkin's options so it is automatically setup
+#7) Start Jenkins and display the URL. 
+#######################################################
+- hosts: "{{groups['temp_group'][0]}}"
   become: yes
   vars:
     #Vars for jenkins
     version: "java-1.8.0-openjdk"
-    #alter: "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.144-0.b01.el7_4.x86_64/jre/bin/java"
     alter: "/usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java"
     repo_url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
     gpg_key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
@@ -93,38 +117,40 @@
         name: "{{version}}"
         state: present
     
-    - name: defaulters
+    - name: Change Default Java
       alternatives:
         name: java
         link: /bin/java
         path: "{{alter}}"
     
-    - name: Download the repo
+    - name: Download the Jenkins Repository
       get_url:
         url: "{{repo_url}}"
         dest: /etc/yum.repos.d/jenkins.repo
     
-    - name: import key
+    - name: Import the GPG Key
       rpm_key:
         state: present
         key: "{{gpg_key}}"
 
-    - name: install jenkins
+    - name: Install Jenkins using yum
       yum:
         name: jenkins
         state: present
 
-    - name: java options
+    - name: Change the Jenkins Options for smooth startup
       lineinfile:
         dest=/etc/sysconfig/jenkins
         regexp=^JENKINS_JAVA_OPTIONS=
         line=JENKINS_JAVA_OPTIONS="{{options}}"
     
-    - name: start jenkins on boot
+    - name: Start the jenkins Service
       service:
         name: jenkins
         state: started
-
-    - name: Jenkins URL
-      debuf: msg="Jenkins URL is:"
-      debug: msg={{groups['launched'][0]}}:8080
+    
+    #Pause for one second to display the URL in raw form.
+    #Alternatively, you can use the debug module to display it as a message.
+    - pause:
+        seconds: 1
+        prompt: Jenkins URL is >>>>>>>>>>>>>>>  {{groups['temp_group'][0]}}:8080 <<<<<<<<<<<<<<<<<<
