@@ -79,7 +79,6 @@
     - name: Add instance to host group
       add_host:
         hostname: "{{ec2_out.instances[0].public_dns_name}}"
-        #hostname: ec2-54-172-146-20.compute-1.amazonaws.com
         groupname: temp_group
         ansible_ssh_private_key_file: "{{key_path}}"
         ansible_user: "{{default_user}}"
