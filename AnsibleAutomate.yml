@@ -3,10 +3,11 @@
   connection: local
   gather_facts: true
   vars: 
-    deployment_name: inst5
+    deployment_name: inst1
     security_name: you_shall_not_pass
     key_name: snarasimha_support
     region_name: us-east-1
+    #open_ip: 0.0.0.0/0
   tasks:
     - name: Security group setup
       ec2_group:
@@ -14,6 +15,10 @@
         description: Allow traffic on ports 22 and 80
         region: "{{region_name}}"
         rules:
+            - proto: tcp
+              from_port: 8080
+              to_port: 8080
+              cidr_ip: 0.0.0.0/0
             - proto: tcp
               from_port: 80
               to_port: 80
@@ -32,10 +37,8 @@
           name: "{{deployment_name}}"
           region: "{{ region_name }}"
           key_name: "{{key_name}}"
-          #vpc_subnet_id: subnet-0fe59510cf0f26363
           instance_type: t2.micro
           security_group: "{{security_name}}"
-          #security_group: default
           network:
             assign_public_ip: true
           #image_id: ami-0c6b1d09930fac512
@@ -60,9 +63,8 @@
     - name: Add instance to host group
       add_host:
         #hostname: "{{ ec2_out.instances[0].public_dns_name }}"
-        #hostname: "{{ec2_out.instances[0].public_dns_name}}"
-        hostname: ec2-54-197-135-202.compute-1.amazonaws.com
-        #hostname: ec2-34-224-221-180.compute-1.amazonaws.com
+        hostname: "{{ec2_out.instances[0].public_dns_name}}"
+        #hostname: ec2-34-228-17-176.compute-1.amazonaws.com
         groupname: launched
         ansible_ssh_private_key_file: ~/.ssh/{{key_name}}.pem
         ansible_user: ec2-user
@@ -85,9 +87,6 @@
     repo_url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
     gpg_key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
     options: "-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
-    #repo_url: https://pkg.jenkins-ci.org/redhat/jenkins.repo
-    #gpg_key: https://pkg.jenkins-ci.org/redhat/jenkins-ci.key
-    #options: "-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
   tasks:
     - name: Install Java
       yum:
@@ -104,29 +103,28 @@
       get_url:
         url: "{{repo_url}}"
         dest: /etc/yum.repos.d/jenkins.repo
-      become: true
     
     - name: import key
       rpm_key:
         state: present
         key: "{{gpg_key}}"
-      become: true
 
     - name: install jenkins
       yum:
         name: jenkins
         state: present
-      become: true
 
     - name: java options
       lineinfile:
         dest=/etc/sysconfig/jenkins
         regexp=^JENKINS_JAVA_OPTIONS=
         line=JENKINS_JAVA_OPTIONS="{{options}}"
-      become: true
     
     - name: start jenkins on boot
       service:
         name: jenkins
         state: started
-      become: true
+
+    - name: Jenkins URL
+      debuf: msg="Jenkins URL is:"
+      debug: msg={{groups['launched'][0]}}:8080
